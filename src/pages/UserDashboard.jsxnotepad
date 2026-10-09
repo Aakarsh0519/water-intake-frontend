@@ -1,0 +1,201 @@
+import React, { useState, useEffect } from "react";
+import API from "../api/client";
+
+export default function UserDashboard({ darkMode, unit, dailyGoal, onGoalUpdated }) {
+  const [todayData, setTodayData] = useState({ totalIntake: 0, dailyGoal: dailyGoal || 2000, logs: [] });
+  const [history, setHistory] = useState([]);
+  const [amount, setAmount] = useState("");
+  const [error, setError] = useState("");
+  const [tab, setTab] = useState("today");
+
+  const loadDashboard = async () => {
+    try {
+      const [todayRes, histRes] = await Promise.all([
+        API.get("/intake/today"),
+        API.get("/intake/history"),
+      ]);
+      setTodayData(todayRes.data);
+      setHistory(histRes.data);
+      if (todayRes.data.dailyGoal && onGoalUpdated) {
+        onGoalUpdated(todayRes.data.dailyGoal);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboard();
+  }, [dailyGoal]);
+
+  const handleLogIntake = async (intakeVal) => {
+    const val = Number(intakeVal);
+    if (!val || val <= 0) {
+      setError("Intake amount must be greater than 0");
+      return;
+    }
+    setError("");
+    try {
+      await API.post("/intake", { amount: val });
+      setAmount("");
+      loadDashboard();
+    } catch (err) {
+      setError(err.response?.data?.error || "Failed to log intake");
+    }
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      await API.delete(`/intake/${id}`);
+      loadDashboard();
+    } catch (err) {
+      alert(err.response?.data?.error || "Deletion failed");
+    }
+  };
+
+  const activeGoal = todayData.dailyGoal || dailyGoal || 2000;
+  const progressPercent = Math.min(100, Math.round((todayData.totalIntake / activeGoal) * 100));
+  const goalAchieved = todayData.totalIntake >= activeGoal;
+
+  const displayFormat = (ml) => {
+    if (unit === "glasses") {
+      return `${(ml / 250).toFixed(1)} glasses`;
+    }
+    return `${ml} ml`;
+  };
+
+  const cardBg = darkMode ? "#2d3748" : "#ffffff";
+  const textColor = darkMode ? "#f7fafc" : "#1a202c";
+  const borderCol = darkMode ? "#4a5568" : "#edf2f7";
+
+  return (
+    <div style={{ maxWidth: "800px", margin: "2rem auto", padding: "0 1rem", fontFamily: "sans-serif" }}>
+      
+      {/* Goal Reached Celebration Banner */}
+      {goalAchieved && (
+        <div style={{
+          background: darkMode ? "#22543d" : "#c6f6d5",
+          color: darkMode ? "#9ae6b4" : "#22543d",
+          padding: "1rem", borderRadius: "8px", marginBottom: "1.5rem",
+          display: "flex", alignItems: "center", gap: "0.75rem", fontWeight: "600"
+        }}>
+          <span>🎉</span> Great job! You reached your daily hydration goal of {displayFormat(activeGoal)}!
+        </div>
+      )}
+
+      {/* Main Hydration Progress Card */}
+      <div style={{ background: cardBg, color: textColor, padding: "1.5rem", borderRadius: "10px", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", marginBottom: "1.5rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 style={{ margin: 0, fontSize: "1.15rem" }}>Today's Hydration Progress</h3>
+          <span style={{ fontSize: "0.9rem", color: goalAchieved ? "#38a169" : "#3182ce", fontWeight: "bold" }}>
+            {progressPercent}% Complete
+          </span>
+        </div>
+
+        <p style={{ marginTop: "0.75rem", fontSize: "1.5rem", fontWeight: "700" }}>
+          {displayFormat(todayData.totalIntake)} / {displayFormat(activeGoal)}
+        </p>
+
+        <div style={{ width: "100%", background: darkMode ? "#4a5568" : "#edf2f7", height: "16px", borderRadius: "8px", marginTop: "0.75rem", overflow: "hidden" }}>
+          <div style={{
+            width: `${progressPercent}%`,
+            background: goalAchieved ? "#38a169" : "#3182ce",
+            height: "100%",
+            transition: "width 0.4s ease"
+          }} />
+        </div>
+
+        {/* Quick Add Presets */}
+        <div style={{ marginTop: "1.5rem" }}>
+          <p style={{ fontSize: "0.85rem", color: darkMode ? "#cbd5e0" : "#4a5568", marginBottom: "0.5rem" }}>Quick Add Presets:</p>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            {[250, 500, 750].map((quick) => (
+              <button
+                key={quick}
+                onClick={() => handleLogIntake(quick)}
+                style={{
+                  background: darkMode ? "#2b6cb0" : "#ebf8ff",
+                  color: darkMode ? "#ffffff" : "#2b6cb0",
+                  border: `1px solid ${darkMode ? "#2b6cb0" : "#bee3f8"}`,
+                  padding: "6px 14px", borderRadius: "6px", cursor: "pointer", fontWeight: "500"
+                }}
+              >
+                +{displayFormat(quick)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Custom Input */}
+        <form onSubmit={(e) => { e.preventDefault(); handleLogIntake(amount); }} style={{ marginTop: "1rem", display: "flex", gap: "0.5rem" }}>
+          <input
+            type="number"
+            placeholder={unit === "glasses" ? "Amount in ml (e.g. 300)" : "Custom amount in ml (e.g. 300)"}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            style={{
+              flex: 1, padding: "8px 12px", borderRadius: "6px",
+              border: `1px solid ${borderCol}`,
+              background: darkMode ? "#1a202c" : "#ffffff",
+              color: textColor
+            }}
+          />
+          <button type="submit" style={{ background: "#3182ce", color: "white", border: "none", padding: "8px 18px", borderRadius: "6px", cursor: "pointer", fontWeight: "600" }}>
+            Add Log
+          </button>
+        </form>
+        {error && <p style={{ color: "#e53e3e", fontSize: "0.85rem", marginTop: "0.5rem" }}>{error}</p>}
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem" }}>
+        <button
+          onClick={() => setTab("today")}
+          style={{
+            background: tab === "today" ? "#3182ce" : cardBg,
+            color: tab === "today" ? "white" : textColor,
+            border: `1px solid ${borderCol}`, padding: "8px 16px", borderRadius: "6px", cursor: "pointer"
+          }}
+        >
+          Today's Logs
+        </button>
+        <button
+          onClick={() => setTab("history")}
+          style={{
+            background: tab === "history" ? "#3182ce" : cardBg,
+            color: tab === "history" ? "white" : textColor,
+            border: `1px solid ${borderCol}`, padding: "8px 16px", borderRadius: "6px", cursor: "pointer"
+          }}
+        >
+          Full History
+        </button>
+      </div>
+
+      {/* List of Entries */}
+      <div style={{ background: cardBg, color: textColor, padding: "1.5rem", borderRadius: "10px", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+        {(tab === "today" ? todayData.logs : history).length === 0 ? (
+          <p style={{ color: "#a0aec0", margin: 0 }}>No records found.</p>
+        ) : (
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {(tab === "today" ? todayData.logs : history).map((item) => (
+              <li key={item._id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.75rem 0", borderBottom: `1px solid ${borderCol}` }}>
+                <div>
+                  <strong>{displayFormat(item.amount)}</strong>
+                  <span style={{ color: "#a0aec0", marginLeft: "1rem", fontSize: "0.85rem" }}>
+                    {new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(item.date).toLocaleDateString()}
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleDelete(item._id)}
+                  style={{ background: "#fed7d7", color: "#c53030", border: "none", padding: "4px 10px", fontSize: "0.8rem", borderRadius: "4px", cursor: "pointer" }}
+                >
+                  Delete
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
